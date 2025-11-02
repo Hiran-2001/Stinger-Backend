@@ -1,0 +1,92 @@
+name: CI/CD Workflow
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Install dependencies
+        run: npm install
+
+      # - name: Create .env file
+      #   run: |
+      #     echo "HOST=${{ secrets.DB_ENDPOINT }}" >> .env
+      #     echo "DBPORT=${{ secrets.DB_PORT }}" >> .env
+      #     echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
+      #     echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+      #     echo "DATABASE=${{ secrets.DB_DATABASE }}" >> .env 
+      #     echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env 
+      #     echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> .env 
+      #     echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env 
+      #     echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env 
+      #     echo "AWS_S3_BUCKET_NAME=${{ secrets.AWS_S3_BUCKET_NAME }}" >> .env 
+
+      # - name: Run tests
+      #   run: npm run test
+
+      # - name: Create .env file
+      #   run: |
+      #     echo "POSTGRESQL_HOST=${{ secrets.HOST }}" >> .env
+      #     echo "POSTGRESQL_DBPORT=${{ secrets.DBPORT }}" >> .env
+      #     echo "POSTGRESQL_DB_USERNAME=${{ secrets.GOOGLE_REDIDB_USERNAMERECT_URL }}" >> .env
+      #     echo "POSTGRESQL_DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+      #     echo "POSTGRESQL_DATABASE=${{ secrets.DATABASE }}" >> .env
+      #     echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
+
+      - name: Deploy to Server 
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Install Node.js and PM2 if not already installed
+            command -v node >/dev/null 2>&1 || curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt-get install -y nodejs
+            command -v pm2 >/dev/null 2>&1 || sudo npm install -g pm2
+
+            cd /home/ubuntu
+
+            # Clone the repo if not present
+            if [ ! -d "Stinger-Backend/.git" ]; then
+            git clone https://github.com/Hiran-2001/Stinger-Backend.git
+            fi
+
+            cd Stinger-Backend
+            git pull origin master
+
+            npm install
+            npm run build
+
+            # Create .env file
+            rm -f .env
+            echo "HOST=${{ secrets.DB_ENDPOINT }}" > .env
+            echo "DBPORT=${{ secrets.DB_PORT }}" >> .env
+            echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
+            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+            echo "DATABASE=${{ secrets.DB_DATABASE }}" >> .env
+            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
+            echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> .env
+            echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
+            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+            echo "AWS_S3_BUCKET_NAME=${{ secrets.AWS_S3_BUCKET_NAME }}" >> .env
+
+            # Restart app using PM2
+            pm2 stop Stinger-Backend 2>/dev/null || true
+            pm2 delete Stinger-Backend 2>/dev/null || true
+            pm2 start dist/main.js --name "Stinger-Backend"      
